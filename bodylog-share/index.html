@@ -418,11 +418,13 @@
   }
   .rec-edit .re-grid label { font-size: 10px; }
   .rec-edit .re-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     gap: 8px;
     margin-top: 10px;
   }
+  .re-status { font-size: 12px; color: var(--text-dim); }
   .rec-edit .re-actions button {
     padding: 10px;
     border-radius: 9px;
@@ -663,9 +665,8 @@
       <div class="day-recs" id="day-recs"></div>
       <div id="ex-list"></div>
       <div class="field">
-        <button class="btn-sub" onclick="addExRow()">＋ 種目を追加</button>
+        <button class="btn-sub" onclick="addExRow()">＋ 種目を追加（選ぶと自動で保存されます）</button>
       </div>
-      <button class="btn-main" id="btn-save-train" onclick="saveTrain()">トレーニングを保存</button>
     </div>
   </div>
 
@@ -825,23 +826,36 @@
     wrap.className = 'ex-row';
     wrap.innerHTML =
       '<div class="ex-name-row">' +
-        '<select class="ex-name" onchange="onExSelect(this)">' + exOptionsHtml() + '</select>' +
+        '<select class="ex-name" onchange="autoAddExercise(this)">' + exOptionsHtml() + '</select>' +
         '<button type="button" class="ex-del" onclick="this.closest(\'.ex-row\').remove();">✕</button>' +
-      '</div>' +
-      '<div class="ex-detail" style="display:none">' +
-        '<div class="ex-grid">' +
-          '<div><label>重量(kg)</label><input type="text" class="ex-weight" placeholder="60 / 自重 など"></div>' +
-          '<div><label>回数</label><input type="text" class="ex-reps" placeholder="10 / 10-8-6 など"></div>' +
-          '<div><label>セット数</label><input type="text" class="ex-sets" placeholder="3"></div>' +
-          '<div><label>秒数</label><input type="text" class="ex-secs" placeholder="30 / 左右30 など"></div>' +
-        '</div>' +
       '</div>';
     document.getElementById('ex-list').appendChild(wrap);
   }
 
-  function onExSelect(sel) {
-    const row = sel.closest('.ex-row');
-    row.querySelector('.ex-detail').style.display = sel.value ? 'block' : 'none';
+  // 種目を選んだ瞬間に自動保存 → そのまま詳細入力（編集モード）へ
+  function autoAddExercise(sel) {
+    const name = sel.value;
+    if (!name) return;
+    const date = document.getElementById('train-date').value;
+    if (!date) { toast('日付を入力してください'); sel.value = ''; return; }
+    sel.disabled = true;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.success) { sel.disabled = false; toast(res.message); return; }
+        toast(res.message + '（詳細は自動保存されます）');
+        summaryData = null;
+        sel.closest('.ex-row').remove();
+        dayRecs = res.trainings || [];
+        editingIdx = dayRecs.length - 1;
+        renderDayRecords();
+        const w = document.getElementById('re-weight');
+        if (w) w.focus();
+      })
+      .withFailureHandler(function(err) {
+        sel.disabled = false;
+        toast('エラー: ' + err.message);
+      })
+      .saveTraining({ date: date, exercises: [{ name: name, weight: '', reps: '', sets: '', secs: '' }] });
   }
 
   function refreshAllSelects() {
@@ -1049,16 +1063,16 @@
       if (i === editingIdx) {
         html += '<div class="rec-item"><div class="rec-edit">' +
           '<label>種目名</label>' +
-          '<select id="re-name">' + exOptionsHtml(r.name) + '</select>' +
+          '<select id="re-name" onchange="scheduleAutoSave()">' + exOptionsHtml(r.name) + '</select>' +
           '<div class="re-grid">' +
-            '<div><label>重量(kg)</label><input type="text" id="re-weight" value="' + escapeHtml(r.weight != null ? r.weight : '') + '"></div>' +
-            '<div><label>回数</label><input type="text" id="re-reps" value="' + escapeHtml(r.reps != null ? r.reps : '') + '"></div>' +
-            '<div><label>セット数</label><input type="text" id="re-sets" value="' + escapeHtml(r.sets != null ? r.sets : '') + '"></div>' +
-            '<div><label>秒数</label><input type="text" id="re-secs" value="' + escapeHtml(r.secs != null ? r.secs : '') + '"></div>' +
+            '<div><label>重量(kg)</label><input type="text" id="re-weight" oninput="scheduleAutoSave()" value="' + escapeHtml(r.weight != null ? r.weight : '') + '"></div>' +
+            '<div><label>回数</label><input type="text" id="re-reps" oninput="scheduleAutoSave()" value="' + escapeHtml(r.reps != null ? r.reps : '') + '"></div>' +
+            '<div><label>セット数</label><input type="text" id="re-sets" oninput="scheduleAutoSave()" value="' + escapeHtml(r.sets != null ? r.sets : '') + '"></div>' +
+            '<div><label>秒数</label><input type="text" id="re-secs" oninput="scheduleAutoSave()" value="' + escapeHtml(r.secs != null ? r.secs : '') + '"></div>' +
           '</div>' +
           '<div class="re-actions">' +
-            '<button class="re-cancel" onclick="cancelRec()">キャンセル</button>' +
-            '<button class="re-save" onclick="saveRec(' + i + ')">更新</button>' +
+            '<span class="re-status" id="re-status">自動保存されます</span>' +
+            '<button class="re-save" onclick="doneRec()">完了</button>' +
           '</div>' +
         '</div></div>';
       } else {
@@ -1079,38 +1093,86 @@
   }
 
   function editRec(i) {
+    clearTimeout(autoTimer);
+    autoTimer = null;
     editingIdx = i;
     renderDayRecords();
   }
 
-  function cancelRec() {
-    editingIdx = -1;
-    renderDayRecords();
+  // ===== 自動保存（入力が止まったら自動でサーバへ保存） =====
+  let autoTimer = null;
+
+  function showSaveState(t) {
+    const el = document.getElementById('re-status');
+    if (el) el.textContent = t;
   }
 
-  function saveRec(i) {
-    const r = dayRecs[i];
-    const payload = {
+  function collectEditPayload_() {
+    if (editingIdx < 0) return null;
+    const r = dayRecs[editingIdx];
+    const nameEl = document.getElementById('re-name');
+    if (!r || !nameEl) return null;
+    return {
       row: r.row,
       date: r.date,
-      name: document.getElementById('re-name').value,
+      name: nameEl.value,
       weight: document.getElementById('re-weight').value,
       reps: document.getElementById('re-reps').value,
       sets: document.getElementById('re-sets').value,
       secs: document.getElementById('re-secs').value
     };
-    if (!payload.name) { toast('種目を選択してください'); return; }
-    google.script.run.withSuccessHandler(function(res) {
-      toast(res.message);
-      summaryData = null;
-      if (res.trainings) {
-        dayRecs = res.trainings;
-        editingIdx = -1;
-        renderDayRecords();
-      } else {
-        loadDayRecords(r.date);
-      }
-    }).updateTrainingRow(payload);
+  }
+
+  function applyLocal_(r, p) {
+    r.name = p.name;
+    r.weight = p.weight.trim() ? p.weight.trim() : null;
+    r.reps = p.reps.trim() ? p.reps.trim() : null;
+    r.sets = p.sets.trim() ? p.sets.trim() : null;
+    r.secs = p.secs.trim() ? p.secs.trim() : null;
+  }
+
+  function scheduleAutoSave() {
+    showSaveState('入力中…');
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(autoSaveNow, 1000);
+  }
+
+  function autoSaveNow() {
+    clearTimeout(autoTimer);
+    autoTimer = null;
+    const p = collectEditPayload_();
+    if (!p || !p.name) return;
+    const r = dayRecs[editingIdx];
+    showSaveState('保存中…');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res.success) {
+          applyLocal_(r, p);
+          summaryData = null;
+          showSaveState('✓ 保存済み');
+        } else {
+          showSaveState(res.message);
+        }
+      })
+      .withFailureHandler(function(err) { showSaveState('保存失敗: ' + err.message); })
+      .updateTrainingRow(p);
+  }
+
+  // 編集を閉じる（未保存の変更があれば送信してから閉じる）
+  function doneRec() {
+    clearTimeout(autoTimer);
+    autoTimer = null;
+    const p = collectEditPayload_();
+    if (!p) return;
+    if (!p.name) { toast('種目を選択してください'); return; }
+    applyLocal_(dayRecs[editingIdx], p);
+    editingIdx = -1;
+    renderDayRecords();
+    summaryData = null;
+    google.script.run
+      .withSuccessHandler(function(res) { if (!res.success) toast(res.message); })
+      .withFailureHandler(function(err) { toast('保存失敗: ' + err.message); })
+      .updateTrainingRow(p);
   }
 
   function delRec(i) {
@@ -1129,50 +1191,6 @@
     }).deleteTrainingRow({ row: r.row, date: r.date });
   }
 
-  function saveTrain() {
-    const btn = document.getElementById('btn-save-train');
-    const date = document.getElementById('train-date').value;
-    if (!date) { toast('日付を入力してください'); return; }
-
-    const exercises = [];
-    document.querySelectorAll('#ex-list .ex-row').forEach(function(row) {
-      const name = row.querySelector('.ex-name').value.trim();
-      if (!name) return;
-      exercises.push({
-        name: name,
-        weight: row.querySelector('.ex-weight').value,
-        reps: row.querySelector('.ex-reps').value,
-        sets: row.querySelector('.ex-sets').value,
-        secs: row.querySelector('.ex-secs').value
-      });
-    });
-
-    if (exercises.length === 0) { toast('種目名を入力してください'); return; }
-
-    btn.disabled = true;
-    btn.textContent = '保存中...';
-    google.script.run
-      .withSuccessHandler(function(res) {
-        btn.disabled = false;
-        btn.textContent = 'トレーニングを保存';
-        toast(res.message);
-        document.getElementById('ex-list').innerHTML = '';
-        summaryData = null;
-        if (res.trainings) {
-          dayRecs = res.trainings;
-          editingIdx = -1;
-          renderDayRecords();
-        } else {
-          loadDayRecords(date);
-        }
-      })
-      .withFailureHandler(function(err) {
-        btn.disabled = false;
-        btn.textContent = 'トレーニングを保存';
-        toast('エラー: ' + err.message);
-      })
-      .saveTraining({ date: date, exercises: exercises });
-  }
 
   // ===== まとめ =====
   function loadSummary() {

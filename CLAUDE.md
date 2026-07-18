@@ -77,8 +77,9 @@ curl -s -X POST http://127.0.0.1:8765/api/render -H 'Content-Type: application/j
 
 ## BODY LOG（GAS側）
 
-- 実体はGASエディタ上の2ファイル: `Code.gs` と `index.html`（ソースは `bodylog/` で管理する。
-  現状はREADMEのみでソース未取り込み。変更後はGASエディタへ手動貼り付け。詳細は bodylog/README.md）
+- 実体はGAS上の2ファイル: `コード.js`（=Code.gs）と `index.html`。`bodylog/` に clasp で取り込み済み。
+  **秘密（API_SECRET等）がハードコードされているためGASソースは gitignore**（ローカルとGAS間で直接同期）。
+  手元に無ければ `clasp clone <スクリプトID>` で再取得。詳細は bodylog/README.md
 - スプレッドシートのシート構成:
   - `コンディション`: 日付/体重(kg)/睡眠時間(h)/疲労度(1-5)/体調スコア(1-5)/メモ/記録時刻
   - `トレーニング`: 日付/種目/重量(kg)/回数/セット数/記録時刻
@@ -94,14 +95,22 @@ curl -s -X POST http://127.0.0.1:8765/api/render -H 'Content-Type: application/j
   - 冒頭の `GIF_TOOL_URL` にRenderのURL(?key=付き)を設定
   - まとめ: SUMMARYやグラフは意図的に廃止済み。復活させない
 
-## GASのデプロイ手順（最重要・事故多発ポイント）
+## GASのデプロイ手順（clasp導入済み・2026-07-18〜）
 
-1. GASエディタでファイルを上書き → Ctrl+S
-2. デプロイ → **デプロイを管理** → 鉛筆 → バージョン「**新バージョン**」→ デプロイ
-   - 「新しいデプロイ」を作るとURLが変わってしまうので使わない
-   - アクセス設定は「**全員**」を維持（外部連携に必須。API_SECRETで保護）
-3. 反映されない場合の切り分け: シークレットウィンドウで確認 → 表示されればキャッシュ
-※将来的に clasp を導入すればターミナルから push/deploy 可能。導入したらこの節を更新すること
+ターミナルから完結する。GASエディタでの手動貼り付けは不要になった。
+
+```bash
+cd bodylog
+# 編集後:
+clasp push                                          # GASへアップロード
+clasp deploy -i $(cat .deployment-id) -d "説明"     # 本番へ新バージョン発行
+```
+
+- **`-i $(cat .deployment-id)` が最重要**。付け忘れると新しいデプロイ（＝新URL）ができて事故る
+- アクセス設定は「**全員**」を維持（外部連携に必須。API_SECRETで保護）
+- GASエディタで直接編集した後は `clasp pull` でローカルに取り込んでから作業する
+- 反映されない場合の切り分け: シークレットウィンドウで確認 → 表示されればキャッシュ
+- clasp は `~/.local/bin/clasp`。認証が切れたら `clasp login`（ブラウザ承認が必要なのでReoに依頼）
 
 ## 既知の注意点・過去の地雷
 
@@ -117,4 +126,4 @@ curl -s -X POST http://127.0.0.1:8765/api/render -H 'Content-Type: application/j
 ## よくあるタスクの型
 
 - 「gifserverの〇〇を直して」→ 編集 → コミット → push（Renderが自動デプロイ）まで一気に実行してよい
-- 「BODY LOGの〇〇を直して」→ bodylog/ に取り込み済みならファイル編集まで。GASへの貼り付けと再デプロイはReoが手動（claspが入るまで）。変更後は「GASに貼って新バージョンでデプロイして」と明確にリマインドすること
+- 「BODY LOGの〇〇を直して」→ bodylog/ で編集 → `clasp push` → `clasp deploy -i $(cat .deployment-id)` まで一気に実行してよい（GASソースはgitignoreなのでコミットは不要）

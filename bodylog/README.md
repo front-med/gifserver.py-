@@ -1,30 +1,42 @@
 # bodylog/ — BODY LOG（GAS側）ソース管理
 
-BODY LOG本体は Google Apps Script（GAS）上の2ファイル `Code.gs` と `index.html` で動いている。
-このディレクトリは、そのソースを**バージョン管理するためのミラー**。GASエディタとは自動同期しない。
+BODY LOG本体は Google Apps Script（GAS）上で動いている。
+このディレクトリは **clasp** でGASと直接同期する作業ディレクトリ。
 
-## 運用ルール（重要）
+## ファイル構成（ローカルのみ・gitには入らない）
 
-- ここのファイルを編集しても本番には反映されない。**GASエディタへ手動で貼り付け → 新バージョンでデプロイ**が必要。
-- 変更したら、Claude は「GASに貼って新バージョンでデプロイして」と明確にリマインドすること（CLAUDE.md の方針）。
-- clasp を導入すればターミナルから push/deploy できるようになる。導入したら CLAUDE.md の該当節とこのREADMEを更新すること。
+- `コード.js` … GASの本体（doPost / getInitData / upsertWeight_ など）
+- `index.html` … UI（タブ3つ: 記録 / トレーニング / まとめ）
+- `appsscript.json` … マニフェスト（oauthScopes等）
+- `.clasp.json` … clasp設定（スクリプトID）
+- `.deployment-id` … 本番Web AppのデプロイID（1行テキスト）
 
-## GASデプロイ手順（事故多発ポイント）
+⚠️ 上記は **API_SECRET 等の秘密がハードコードされているため全て gitignore 済み**。
+公開リポジトリにコミットしないこと。手元に無い場合は `clasp clone <スクリプトID>` で再取得
+（スクリプトIDはGASエディタ → プロジェクトの設定）。
 
-1. GASエディタでファイルを上書き → Ctrl+S
-2. デプロイ → **デプロイを管理** → 鉛筆 → バージョン「**新バージョン**」→ デプロイ
-   - 「新しいデプロイ」を作るとURLが変わるので使わない
-   - アクセス設定は「**全員**」を維持（外部連携に必須。API_SECRETで保護）
-3. 反映されない場合: シークレットウィンドウで確認 → 表示されればキャッシュ
+## 変更フロー（クラウド反映まで全部ターミナルで完結）
+
+```bash
+cd bodylog
+
+# 1. コード.js / index.html を編集
+
+# 2. GASへアップロード
+clasp push
+
+# 3. 本番Web Appに新バージョンを発行（-i 必須！ URLが変わらない）
+clasp deploy -i $(cat .deployment-id) -d "変更内容の説明"
+
+# 4. 反映確認（シークレットウィンドウ推奨）
+clasp deployments   # バージョン番号が上がっていればOK
+```
+
+- **`-i` を付け忘れると新しいデプロイ（＝新URL）が作られてしまう。絶対に付ける。**
+- clasp は `~/.local/bin/clasp`（PATH設定済み）。ログインは `clasp login`（reo0915b@gmail.com）
+- GASエディタで直接編集した場合は、次の作業前に `clasp pull` でローカルへ取り込むこと
 
 ## 秘密情報
 
-- `API_SECRET` / スプレッドシートID 等は**コミットしない**。取り込む際はプレースホルダに置換すること。
-- gifserver 側の `GAS_SECRET` と GAS の `API_SECRET` は必ず一致させる。
-
-## ファイル（取り込み待ち）
-
-- `Code.gs` … doPost（体重受信 / listExercises / uploadMedia）, getInitData, upsertWeight_ など
-- `index.html` … タブ3つ（記録 / トレーニング / まとめ）。冒頭の `GIF_TOOL_URL` に Render の URL(?key=付き) を設定
-
-> GASエディタからコピーしてこのディレクトリに配置したら、この節を実ファイルの説明に置き換える。
+- `API_SECRET`（コード.js内）と gifserver 側の `GAS_SECRET`（Render環境変数）は必ず一致させる
+- デプロイID・スクリプトID・Web App URLも公開リポジトリに書かない

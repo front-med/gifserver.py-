@@ -6,5 +6,13 @@ __pycache__/
 gif_out/
 cookies.txt
 
+# bodylog（GAS側ソース）: API_SECRET等の秘密がハードコードされているため
+# 公開リポジトリにはコミットしない。clasp pull/push でGASと直接同期する
+bodylog/コード.js
+bodylog/index.html
+bodylog/appsscript.json
+bodylog/.clasp.json
+bodylog/.deployment-id
+
 # OS
 .DS_Store

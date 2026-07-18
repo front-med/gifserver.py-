@@ -440,6 +440,13 @@
     border: 1px solid var(--line); border-radius: 8px; color: var(--text-dim); cursor: pointer;
   }
   .add-set { margin-bottom: 4px; }
+
+  /* コンパクト表示＋タップでプレビュー */
+  .rec-tap { flex: 1; display: flex; align-items: center; gap: 8px; cursor: pointer; min-width: 0; }
+  .rec-tap .rec-caret { font-size: 11px; color: var(--text-dim); }
+  .rec-preview { margin-top: 9px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .pv-row { display: flex; gap: 10px; font-size: 13px; padding: 3px 0; }
+  .pv-no { color: var(--text-dim); width: 72px; flex-shrink: 0; font-size: 12px; }
   .rec-edit .re-actions button {
     padding: 10px;
     border-radius: 9px;
@@ -1063,6 +1070,7 @@
     google.script.run.withSuccessHandler(function(list) {
       dayRecs = list || [];
       editingIdx = -1;
+      previewIdx = -1;
       renderDayRecords();
     }).getTrainingByDate(dateStr);
   }
@@ -1093,32 +1101,20 @@
           '</div>' +
         '</div></div>';
       } else {
-        const parts = [];
-        const multi = (r.weight != null && String(r.weight).indexOf('/') >= 0) ||
-                      (r.reps != null && String(r.reps).indexOf('/') >= 0);
-        if (multi) {
-          const ws = r.weight != null ? String(r.weight).split('/') : [];
-          const rs = r.reps != null ? String(r.reps).split('/') : [];
-          const n = Math.max(ws.length, rs.length);
-          const seg = [];
-          for (let k = 0; k < n; k++) {
-            const w = ws[k] ? ws[k] + 'kg' : '';
-            const c = rs[k] ? rs[k] + '回' : '';
-            seg.push(w + (w && c ? '×' : '') + c);
-          }
-          parts.push(escapeHtml(seg.join(' → ')));
-        } else {
-          if (r.weight != null) parts.push(fv(r.weight, 'kg'));
-          if (r.reps != null) parts.push(fv(r.reps, '回'));
-          if (r.sets != null) parts.push(fv(r.sets, 'セット'));
-        }
-        if (r.secs != null) parts.push(fv(r.secs, '秒'));
+        const lines = setLines_(r);
+        const setCount = lines.length > 1 ? String(lines.length) : (r.sets != null ? String(r.sets) : (lines.length ? '1' : ''));
+        let summary = setCount ? fv(setCount, 'セット') : (r.secs != null ? fv(r.secs, '秒') : '');
         html += '<div class="rec-item"><div class="rec-view">' +
-          '<span class="rec-name">' + escapeHtml(r.name) + '</span>' +
-          '<span class="rec-detail">' + parts.join(multi ? '　' : '×') + '</span>' +
+          '<span class="rec-tap" onclick="togglePreview(' + i + ')">' +
+            '<span class="rec-name">' + escapeHtml(r.name) + '</span>' +
+            '<span class="rec-detail">' + summary + '</span>' +
+            '<span class="rec-caret">' + (previewIdx === i ? '▲' : '▼') + '</span>' +
+          '</span>' +
           '<button onclick="editRec(' + i + ')">編集</button>' +
           '<button class="rec-del" onclick="delRec(' + i + ')">削除</button>' +
-        '</div></div>';
+        '</div>' +
+        (previewIdx === i ? previewHtml_(r, lines) : '') +
+        '</div>';
       }
     });
     el.innerHTML = html;
@@ -1128,6 +1124,7 @@
     clearTimeout(autoTimer);
     autoTimer = null;
     editingIdx = i;
+    previewIdx = -1;
     renderDayRecords();
   }
 
@@ -1161,6 +1158,47 @@
       sets: used.length ? String(used.length) : '',
       secs: document.getElementById('re-secs').value
     };
+  }
+
+  // ===== セット内訳・プレビュー =====
+  let previewIdx = -1;
+
+  function setLines_(r) {
+    const ws = r.weight != null ? String(r.weight).split('/') : [];
+    const rs = r.reps != null ? String(r.reps).split('/') : [];
+    const n = Math.max(ws.length, rs.length);
+    const lines = [];
+    for (let k = 0; k < n; k++) {
+      const w = (ws[k] || '').trim();
+      const c = (rs[k] || '').trim();
+      if (!w && !c) continue;
+      lines.push({ no: k + 1, w: w, c: c });
+    }
+    return lines;
+  }
+
+  function togglePreview(i) {
+    previewIdx = (previewIdx === i) ? -1 : i;
+    renderDayRecords();
+  }
+
+  function previewHtml_(r, lines) {
+    let html = '<div class="rec-preview">';
+    lines.forEach(function(l) {
+      html += '<div class="pv-row"><span class="pv-no">' + l.no + 'セット目</span><span>' +
+        (l.w ? fv(l.w, 'kg') : '') + (l.w && l.c ? ' × ' : '') + (l.c ? fv(l.c, '回') : '') +
+        '</span></div>';
+    });
+    if (lines.length <= 1 && r.sets != null && String(r.sets) !== '1') {
+      html += '<div class="pv-row"><span class="pv-no">セット数</span><span>' + fv(r.sets, 'セット') + '</span></div>';
+    }
+    if (r.secs != null) {
+      html += '<div class="pv-row"><span class="pv-no">秒数</span><span>' + fv(r.secs, '秒') + '</span></div>';
+    }
+    if (html.indexOf('pv-row') < 0) {
+      html += '<div class="pv-row"><span class="pv-no">詳細なし</span></div>';
+    }
+    return html + '</div>';
   }
 
   // ===== セットごと入力の行操作 =====
@@ -1370,17 +1408,36 @@
 
     sheetDayDate = date;
     let html = '<div class="back-bar"><button class="back-btn" onclick="backToDayList()">‹ 日付一覧に戻る</button></div>';
-    html += '<div class="day-table-wrap"><table><tr><th>種目</th><th>重量<br>(kg)</th><th>回数</th><th>セット</th><th>秒数</th><th>時刻</th><th></th></tr>';
-    day.exercises.forEach(function(t, i) {
-      html += '<tr>' +
-        '<td>' + escapeHtml(t.name) + '</td>' +
-        '<td>' + (t.weight !== null ? escapeHtml(t.weight) : '--') + '</td>' +
-        '<td>' + (t.reps !== null ? escapeHtml(t.reps) : '--') + '</td>' +
-        '<td>' + (t.sets !== null ? escapeHtml(t.sets) : '--') + '</td>' +
-        '<td>' + (t.secs != null ? escapeHtml(t.secs) : '--') + '</td>' +
-        '<td class="dim">' + (t.time || '--') + '</td>' +
-        '<td><button class="sv-del" onclick="delSheetRow(' + t.row + ')">削除</button></td>' +
-        '</tr>';
+    html += '<div class="day-table-wrap"><table><tr><th>種目</th><th>セット</th><th>重量<br>(kg)</th><th>回数</th><th>秒数</th><th>時刻</th><th></th></tr>';
+    day.exercises.forEach(function(t) {
+      const lines = setLines_(t);
+      const n = Math.max(lines.length, 1);
+      for (let k = 0; k < n; k++) {
+        const l = lines[k];
+        let setLabel;
+        if (lines.length > 1) {
+          setLabel = l.no + 'セット目';
+        } else if (t.sets != null && String(t.sets) !== '1') {
+          setLabel = escapeHtml(t.sets) + 'セット';
+        } else if (lines.length === 1) {
+          setLabel = '1セット目';
+        } else {
+          setLabel = '--';
+        }
+        html += '<tr>';
+        if (k === 0) {
+          html += '<td rowspan="' + n + '"><b>' + escapeHtml(t.name) + '</b></td>';
+        }
+        html += '<td>' + setLabel + '</td>' +
+          '<td>' + (l && l.w ? escapeHtml(l.w) : '--') + '</td>' +
+          '<td>' + (l && l.c ? escapeHtml(l.c) : '--') + '</td>';
+        if (k === 0) {
+          html += '<td rowspan="' + n + '">' + (t.secs != null ? escapeHtml(t.secs) : '--') + '</td>' +
+            '<td rowspan="' + n + '" class="dim">' + (t.time || '--') + '</td>' +
+            '<td rowspan="' + n + '"><button class="sv-del" onclick="delSheetRow(' + t.row + ')">削除</button></td>';
+        }
+        html += '</tr>';
+      }
     });
     html += '</table></div>';
     document.getElementById('sv-body').innerHTML = html;

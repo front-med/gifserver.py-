@@ -808,6 +808,8 @@
         dayRecs = d.trainings || [];
         editingIdx = -1;
         renderDayRecords();
+        dayCache[todayStr()] = { condition: d.condition, trainings: dayRecs };
+        schedulePrefetchSummary();
         document.getElementById('register-view').classList.add('hide');
       })
       .withFailureHandler(function(err) {
@@ -854,28 +856,40 @@
     document.getElementById('ex-list').appendChild(wrap);
   }
 
-  // 種目を選んだ瞬間に自動保存 → そのまま詳細入力（編集モード）へ
+  // 種目を選んだ瞬間に即フォームを開く（サーバ保存は裏で実行＝体感ゼロ待ち）
   function autoAddExercise(sel) {
     const name = sel.value;
     if (!name) return;
     const date = document.getElementById('train-date').value;
     if (!date) { toast('日付を入力してください'); sel.value = ''; return; }
-    sel.disabled = true;
+    sel.closest('.ex-row').remove();
+    const temp = { row: null, date: date, name: name, weight: null, reps: null, sets: null, secs: null, time: '', _pending: null };
+    dayRecs.push(temp);
+    editingIdx = dayRecs.length - 1;
+    previewIdx = -1;
+    renderDayRecords();
+    showSaveState('保存中…');
+    const w = document.getElementById('re-weight');
+    if (w) w.focus();
     google.script.run
       .withSuccessHandler(function(res) {
-        if (!res.success) { sel.disabled = false; toast(res.message); return; }
-        toast(res.message + '（詳細は自動保存されます）');
-        summaryData = null;
-        sel.closest('.ex-row').remove();
-        dayRecs = res.trainings || [];
-        editingIdx = dayRecs.length - 1;
-        renderDayRecords();
-        const w = document.getElementById('re-weight');
-        if (w) w.focus();
+        if (!res.success) {
+          toast(res.message);
+          const idx = dayRecs.indexOf(temp);
+          if (idx >= 0) {
+            dayRecs.splice(idx, 1);
+            if (editingIdx === idx) editingIdx = -1;
+            renderDayRecords();
+          }
+          return;
+        }
+        summaryData = null; schedulePrefetchSummary();
+        syncRowIds_(res.trainings || []);
+        if (dayRecs.indexOf(temp) === editingIdx) showSaveState('✓ 保存済み');
+        flushPending_(temp);
       })
       .withFailureHandler(function(err) {
-        sel.disabled = false;
-        toast('エラー: ' + err.message);
+        toast('保存に失敗しました: ' + err.message);
       })
       .saveTraining({ date: date, exercises: [{ name: name, weight: '', reps: '', sets: '', secs: '' }] });
   }
@@ -1026,7 +1040,13 @@
   }
 
   function loadCondForDate(dateStr) {
-    google.script.run.withSuccessHandler(applyCond).getConditionByDate(dateStr);
+    const c = dayCache[dateStr];
+    if (c && 'condition' in c) applyCond(c.condition);
+    google.script.run.withSuccessHandler(function(data) {
+      dayCache[dateStr] = dayCache[dateStr] || {};
+      dayCache[dateStr].condition = data;
+      if (document.getElementById('cond-date').value === dateStr) applyCond(data);
+    }).getConditionByDate(dateStr);
   }
 
   function saveCond() {
@@ -1050,6 +1070,11 @@
         btn.disabled = false;
         btn.textContent = 'コンディションを保存';
         toast(res.message);
+        dayCache[data.date] = dayCache[data.date] || {};
+        dayCache[data.date].condition = {
+          date: data.date, weight: data.weight, sleep: data.sleep,
+          fatigue: data.fatigue, score: data.score, memo: data.memo
+        };
         summaryData = null;
       })
       .withFailureHandler(function(err) {
@@ -1066,10 +1091,21 @@
 
   function loadDayRecords(dateStr) {
     const el = document.getElementById('day-recs');
-    el.innerHTML = '<div class="dr-title">読み込み中...</div>';
-    google.script.run.withSuccessHandler(function(list) {
-      dayRecs = list || [];
+    const c = dayCache[dateStr];
+    if (c && c.trainings) {
+      dayRecs = c.trainings;
       editingIdx = -1;
+      previewIdx = -1;
+      renderDayRecords();
+    } else {
+      el.innerHTML = '<div class="dr-title">読み込み中...</div>';
+    }
+    google.script.run.withSuccessHandler(function(list) {
+      if (document.getElementById('train-date').value !== dateStr) return;
+      if (editingIdx >= 0) return;
+      dayRecs = list || [];
+      dayCache[dateStr] = dayCache[dateStr] || {};
+      dayCache[dateStr].trainings = dayRecs;
       previewIdx = -1;
       renderDayRecords();
     }).getTrainingByDate(dateStr);
@@ -1162,6 +1198,45 @@
 
   // ===== セット内訳・プレビュー =====
   let previewIdx = -1;
+
+  // ===== 反応速度改善: 日付キャッシュ＆まとめ事前読み込み =====
+  const dayCache = {};   // 'yyyy-MM-dd' -> { condition, trainings }
+  let prefetchTimer = null;
+
+  function schedulePrefetchSummary() {
+    clearTimeout(prefetchTimer);
+    prefetchTimer = setTimeout(function() {
+      if (summaryData) return;
+      google.script.run.withSuccessHandler(function(data) {
+        if (!summaryData) summaryData = data;
+      }).getSummary();
+    }, 2000);
+  }
+
+  // サーバ返答とローカルを突き合わせてid/時刻だけ取り込む（入力中の値は保持）
+  function syncRowIds_(list) {
+    for (let i = 0; i < Math.min(list.length, dayRecs.length); i++) {
+      dayRecs[i].row = list[i].row;
+      dayRecs[i].time = list[i].time;
+    }
+    if (dayRecs.length && dayRecs[0].date) {
+      dayCache[dayRecs[0].date] = dayCache[dayRecs[0].date] || {};
+      dayCache[dayRecs[0].date].trainings = dayRecs;
+    }
+  }
+
+  // 未採番レコードの編集内容を、id確定後に送信する
+  function flushPending_(rec) {
+    if (rec._pending && rec.row != null) {
+      const p = rec._pending;
+      rec._pending = null;
+      p.row = rec.row;
+      google.script.run
+        .withSuccessHandler(function(res) { if (!res.success) toast(res.message); })
+        .withFailureHandler(function(err) { toast('保存失敗: ' + err.message); })
+        .updateTrainingRow(p);
+    }
+  }
 
   function setLines_(r) {
     const ws = r.weight != null ? String(r.weight).split('/') : [];
@@ -1273,12 +1348,19 @@
     const p = collectEditPayload_();
     if (!p || !p.name) return;
     const r = dayRecs[editingIdx];
+    if (r.row == null) {
+      // サーバのID採番待ち。確定したら flushPending_ が送信する
+      applyLocal_(r, p);
+      r._pending = p;
+      showSaveState('保存中…');
+      return;
+    }
     showSaveState('保存中…');
     google.script.run
       .withSuccessHandler(function(res) {
         if (res.success) {
           applyLocal_(r, p);
-          summaryData = null;
+          summaryData = null; schedulePrefetchSummary();
           showSaveState('✓ 保存済み');
         } else {
           showSaveState(res.message);
@@ -1295,10 +1377,12 @@
     const p = collectEditPayload_();
     if (!p) return;
     if (!p.name) { toast('種目を選択してください'); return; }
-    applyLocal_(dayRecs[editingIdx], p);
+    const rec = dayRecs[editingIdx];
+    applyLocal_(rec, p);
     editingIdx = -1;
     renderDayRecords();
-    summaryData = null;
+    summaryData = null; schedulePrefetchSummary();
+    if (rec.row == null) { rec._pending = p; return; }
     google.script.run
       .withSuccessHandler(function(res) { if (!res.success) toast(res.message); })
       .withFailureHandler(function(err) { toast('保存失敗: ' + err.message); })
@@ -1307,12 +1391,15 @@
 
   function delRec(i) {
     const r = dayRecs[i];
+    if (r.row == null) { toast('保存処理中です。1〜2秒待ってから削除してください'); return; }
     if (!confirm(r.name + ' の記録を削除しますか？\n（元に戻せません）')) return;
     google.script.run.withSuccessHandler(function(res) {
       toast(res.message);
-      summaryData = null;
+      summaryData = null; schedulePrefetchSummary();
       if (res.trainings) {
         dayRecs = res.trainings;
+        dayCache[r.date] = dayCache[r.date] || {};
+        dayCache[r.date].trainings = dayRecs;
         editingIdx = -1;
         renderDayRecords();
       } else {

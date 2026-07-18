@@ -14,5 +14,9 @@ bodylog/appsscript.json
 bodylog/.clasp.json
 bodylog/.deployment-id
 
+# bodylog-share: ソースは秘密なしなのでコミットするが、ID類は公開しない
+bodylog-share/.clasp.json
+bodylog-share/.deployment-id
+
 # OS
 .DS_Store

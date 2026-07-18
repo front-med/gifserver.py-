@@ -95,6 +95,18 @@ curl -s -X POST http://127.0.0.1:8765/api/render -H 'Content-Type: application/j
   - 冒頭の `GIF_TOOL_URL` にRenderのURL(?key=付き)を設定
   - まとめ: SUMMARYやグラフは意図的に廃止済み。復活させない
 
+## BODY LOG Share（共有版・マルチユーザー / bodylog-share/）
+
+- 友人などに共有するための別GASプロジェクト（standalone）。本家BODY LOGとは完全分離
+- 仕組み: Web Appを「アクセスしているユーザーとして実行」+「Googleアカウント必須」でデプロイ
+  → ログイン強制。初回に名前登録（必須）すると**本人のGoogleドライブ**に記録用スプレッドシートが
+  自動作成され、データは完全に個人別（Reoからも見えない）
+- 機能はコア3つのみ（記録 / トレーニング / まとめ）。素材・GIF連携・体重API・LINEレポートは本家のみ
+- ソースは秘密なしのためコミット対象。`.clasp.json` と `.deployment-id` はgitignore
+- デプロイフローは bodylog/ と同じ（`clasp push` → `clasp deploy -i $(cat .deployment-id) -d "説明"`）
+- 注意: 未検証アプリのため、新規ユーザーの初回承認時に「Googleによる確認が完了していません」
+  警告が出る。「詳細」→「（安全ではないページ）に移動」で進める、と共有相手に伝えること
+
 ## GASのデプロイ手順（clasp導入済み・2026-07-18〜）
 
 ターミナルから完結する。GASエディタでの手動貼り付けは不要になった。

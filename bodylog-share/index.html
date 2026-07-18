@@ -609,6 +609,11 @@
     margin-bottom: 14px;
   }
   .reg-note { font-size: 11px; color: var(--text-dim); margin-top: 14px; line-height: 1.7; }
+  .name-edit {
+    background: #ffffff; border: 1px solid var(--line); border-radius: 6px;
+    font-size: 10px; padding: 2px 8px; color: var(--text-dim);
+    cursor: pointer; margin-left: 4px; vertical-align: 1px;
+  }
 </style>
 </head>
 <body>
@@ -622,11 +627,11 @@
     </div>
     <div id="reg-form" style="display:none">
       <h1>会員登録</h1>
-      <div class="desc">はじめまして！<br>BODY LOGを使うには名前の登録が必要です。</div>
-      <div class="email" id="reg-email"></div>
+      <div class="desc">名前とあいことばを入れるだけで始められます。<br>登録済みの名前なら続きから再開できます。</div>
       <input type="text" id="reg-name" placeholder="名前（必須・30文字まで）" maxlength="30">
-      <button class="btn-main" id="btn-register" onclick="doRegister()">登録してはじめる</button>
-      <div class="reg-note">登録は名前の入力だけで完了します。<br>記録データはこのアプリ内にあなた専用で保存され、<br>他の人があなたの記録を見ることはできません。</div>
+      <input type="password" id="reg-pass" placeholder="あいことば">
+      <button class="btn-main" id="btn-register" onclick="doRegister()">はじめる</button>
+      <div class="reg-note">記録データはあなた専用に保存され、<br>他の人が見ることはできません。<br>あいことばは管理者（Reo）に聞いてください。</div>
     </div>
   </div>
 </div>
@@ -756,6 +761,8 @@
   let summaryData = null;
   let exNames = [];
   let userName = '';
+  let UID = '';
+  let headerDateText = '';
 
   // ===== 初期化 =====
   function todayStr() {
@@ -770,8 +777,8 @@
     document.getElementById('train-date').value = todayStr();
     const d = new Date();
     const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-    document.getElementById('header-date').textContent =
-      d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日（' + wd + '）';
+    headerDateText = d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日（' + wd + '）';
+    document.getElementById('header-date').textContent = headerDateText;
 
     buildScale('scale-fatigue', function(v) { fatigueVal = v; });
     buildScale('scale-score', function(v) { scoreVal = v; });
@@ -786,23 +793,57 @@
     document.getElementById('reg-name').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') doRegister();
     });
+    document.getElementById('reg-pass').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') doRegister();
+    });
 
     loadInit();
   }
 
+  function showGate_() {
+    document.getElementById('reg-loading').style.display = 'none';
+    document.getElementById('reg-form').style.display = 'block';
+  }
+
+  function renderHeaderName() {
+    document.getElementById('header-date').innerHTML =
+      escapeHtml(headerDateText) + '　' + escapeHtml(userName) +
+      ' さん <button class="name-edit" type="button" onclick="editName()">変更</button>';
+  }
+
+  function editName() {
+    const n = prompt('新しい名前（30文字まで）', userName);
+    if (n === null) return;
+    const nn = n.trim();
+    if (!nn) { toast('名前が空です'); return; }
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.success) { toast(res.message); return; }
+        userName = res.name;
+        localStorage.setItem('BLS_NAME', userName);
+        renderHeaderName();
+        toast('名前を変更しました');
+      })
+      .withFailureHandler(function(err) { toast('エラー: ' + err.message); })
+      .renameUser(UID, nn);
+  }
+
   function loadInit() {
+    try { UID = localStorage.getItem('BLS_UID') || ''; } catch (e) { UID = ''; }
+    if (!UID) { showGate_(); return; }
     google.script.run
       .withSuccessHandler(function(d) {
         const p = d.profile || {};
         if (!p.registered) {
-          // 未登録 → 登録フォームを表示
-          document.getElementById('reg-loading').style.display = 'none';
-          document.getElementById('reg-email').textContent = p.email || 'Googleアカウント';
-          document.getElementById('reg-form').style.display = 'block';
+          // 端末のIDが無効 → 登録フォームへ
+          try { localStorage.removeItem('BLS_UID'); } catch (e) {}
+          UID = '';
+          showGate_();
           return;
         }
         userName = p.name;
-        document.getElementById('header-date').textContent += '　' + userName + ' さん';
+        try { localStorage.setItem('BLS_NAME', userName); } catch (e) {}
+        renderHeaderName();
         exNames = d.exerciseNames || [];
         applyCond(d.condition);
         dayRecs = d.trainings || [];
@@ -816,21 +857,28 @@
         document.getElementById('reg-loading').innerHTML =
           '<div class="loading">読み込みに失敗しました。再読み込みしてください。<br>' + escapeHtml(err.message || '') + '</div>';
       })
-      .getInitData(todayStr());
+      .getInitData(UID, todayStr());
   }
 
-  // ===== 会員登録 =====
+  // ===== 会員登録（名前＋あいことば） =====
   function doRegister() {
     const name = document.getElementById('reg-name').value.trim();
+    const pass = document.getElementById('reg-pass').value;
     if (!name) { toast('名前を入力してください'); return; }
+    if (!pass) { toast('あいことばを入力してください'); return; }
     const btn = document.getElementById('btn-register');
     btn.disabled = true;
-    btn.textContent = '登録中...';
+    btn.textContent = '確認中...';
     google.script.run
       .withSuccessHandler(function(res) {
         btn.disabled = false;
-        btn.textContent = '登録してはじめる';
+        btn.textContent = 'はじめる';
         if (!res.success) { toast(res.message); return; }
+        UID = res.uid;
+        try {
+          localStorage.setItem('BLS_UID', UID);
+          localStorage.setItem('BLS_NAME', res.name);
+        } catch (e) {}
         toast(res.message);
         document.getElementById('reg-form').style.display = 'none';
         document.getElementById('reg-loading').style.display = 'block';
@@ -838,10 +886,10 @@
       })
       .withFailureHandler(function(err) {
         btn.disabled = false;
-        btn.textContent = '登録してはじめる';
+        btn.textContent = 'はじめる';
         toast('エラー: ' + err.message);
       })
-      .registerUser(name);
+      .registerOrLogin(name, pass);
   }
 
   // ===== トレーニング（種目を追加→選択→詳細入力） =====
@@ -891,7 +939,7 @@
       .withFailureHandler(function(err) {
         toast('保存に失敗しました: ' + err.message);
       })
-      .saveTraining({ date: date, exercises: [{ name: name, weight: '', reps: '', sets: '', secs: '' }] });
+      .saveTraining(UID, { date: date, exercises: [{ name: name, weight: '', reps: '', sets: '', secs: '' }] });
   }
 
   function refreshAllSelects() {
@@ -950,7 +998,7 @@
         renderManageList();
         refreshAllSelects();
       }
-    }).addExerciseName(name);
+    }).addExerciseName(UID, name);
   }
 
   function deleteExercise(name) {
@@ -962,7 +1010,7 @@
         renderManageList();
         refreshAllSelects();
       }
-    }).deleteExerciseName(name);
+    }).deleteExerciseName(UID, name);
   }
 
   function escapeHtml(s) {
@@ -1046,7 +1094,7 @@
       dayCache[dateStr] = dayCache[dateStr] || {};
       dayCache[dateStr].condition = data;
       if (document.getElementById('cond-date').value === dateStr) applyCond(data);
-    }).getConditionByDate(dateStr);
+    }).getConditionByDate(UID, dateStr);
   }
 
   function saveCond() {
@@ -1082,7 +1130,7 @@
         btn.textContent = 'コンディションを保存';
         toast('エラー: ' + err.message);
       })
-      .saveCondition(data);
+      .saveCondition(UID, data);
   }
 
   // ===== その日の記録済み一覧（編集・削除） =====
@@ -1108,7 +1156,7 @@
       dayCache[dateStr].trainings = dayRecs;
       previewIdx = -1;
       renderDayRecords();
-    }).getTrainingByDate(dateStr);
+    }).getTrainingByDate(UID, dateStr);
   }
 
   function renderDayRecords() {
@@ -1209,7 +1257,7 @@
       if (summaryData) return;
       google.script.run.withSuccessHandler(function(data) {
         if (!summaryData) summaryData = data;
-      }).getSummary();
+      }).getSummary(UID);
     }, 2000);
   }
 
@@ -1234,7 +1282,7 @@
       google.script.run
         .withSuccessHandler(function(res) { if (!res.success) toast(res.message); })
         .withFailureHandler(function(err) { toast('保存失敗: ' + err.message); })
-        .updateTrainingRow(p);
+        .updateTrainingRow(UID, p);
     }
   }
 
@@ -1367,7 +1415,7 @@
         }
       })
       .withFailureHandler(function(err) { showSaveState('保存失敗: ' + err.message); })
-      .updateTrainingRow(p);
+      .updateTrainingRow(UID, p);
   }
 
   // 編集を閉じる（未保存の変更があれば送信してから閉じる）
@@ -1386,7 +1434,7 @@
     google.script.run
       .withSuccessHandler(function(res) { if (!res.success) toast(res.message); })
       .withFailureHandler(function(err) { toast('保存失敗: ' + err.message); })
-      .updateTrainingRow(p);
+      .updateTrainingRow(UID, p);
   }
 
   function delRec(i) {
@@ -1405,7 +1453,7 @@
       } else {
         loadDayRecords(r.date);
       }
-    }).deleteTrainingRow({ row: r.row, date: r.date });
+    }).deleteTrainingRow(UID, { row: r.row, date: r.date });
   }
 
 
@@ -1415,7 +1463,7 @@
     google.script.run.withSuccessHandler(function(data) {
       summaryData = data;
       renderSheetCounts();
-    }).getSummary();
+    }).getSummary(UID);
   }
 
   function renderSheetCounts() {
@@ -1546,8 +1594,8 @@
         } else {
           backToDayList();
         }
-      }).getSummary();
-    }).deleteTrainingRow({ row: row, date: sheetDayDate });
+      }).getSummary(UID);
+    }).deleteTrainingRow(UID, { row: row, date: sheetDayDate });
   }
 
   function backToDayList() {

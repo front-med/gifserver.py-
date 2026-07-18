@@ -97,15 +97,15 @@ curl -s -X POST http://127.0.0.1:8765/api/render -H 'Content-Type: application/j
 
 ## BODY LOG Share（共有版・マルチユーザー / bodylog-share/）
 
-- 友人などに共有するための別GASプロジェクト（standalone）。本家BODY LOGとは完全分離
-- 仕組み: Web Appを「アクセスしているユーザーとして実行」+「Googleアカウント必須」でデプロイ
-  → ログイン強制。初回に名前登録（必須）すると**本人のGoogleドライブ**に記録用スプレッドシートが
-  自動作成され、データは完全に個人別（Reoからも見えない）
+- 友人・家族に共有するための別GASプロジェクト（standalone）。本家BODY LOGとは完全分離
+- 仕組み（2026-07-18〜 あいことば方式）: Web Appは「自分として実行」+「全員（匿名可）」
+  → **Googleログイン・承認画面は一切不要**。初回は名前＋あいことば（PASSCODE、コード.js内）を
+  入力するだけ。端末にuid(localStorage)を保存して識別し、同じ名前＋あいことばで別端末からも再開可
+- データはScriptPropertiesにJSON保存（uidで完全分離・月チャンク）。全体500KB上限（家族数人なら数年分）
 - 機能はコア3つのみ（記録 / トレーニング / まとめ）。素材・GIF連携・体重API・LINEレポートは本家のみ
-- ソースは秘密なしのためコミット対象。`.clasp.json` と `.deployment-id` はgitignore
+- **コード.jsはあいことば入りのためgitignore**（index.html/appsscript.jsonはコミット対象）
 - デプロイフローは bodylog/ と同じ（`clasp push` → `clasp deploy -i $(cat .deployment-id) -d "説明"`）
-- 注意: 未検証アプリのため、新規ユーザーの初回承認時に「Googleによる確認が完了していません」
-  警告が出る。「詳細」→「（安全ではないページ）に移動」で進める、と共有相手に伝えること
+- ヘッダーの名前横「変更」ボタンでいつでも名前変更可（renameUser）
 
 ## GASのデプロイ手順（clasp導入済み・2026-07-18〜）
 

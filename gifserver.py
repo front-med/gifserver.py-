@@ -65,13 +65,30 @@ def probe(path):
     }
 
 
+def cookies_file():
+    """CookieファイルのパスをRender Secret File / 環境変数から探す"""
+    for p in [os.environ.get("COOKIES_FILE", ""), "/etc/secrets/cookies.txt", "cookies.txt"]:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
 def download(url):
     cmd = ["yt-dlp", "--no-playlist", "--no-warnings", "--restrict-filenames",
            "-f", "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
            "--merge-output-format", "mp4",
            "-o", os.path.join(WORK, "%(id)s.%(ext)s"),
            "--print", "after_move:filepath", "--no-simulate", url]
-    if COOKIES:
+    ck = cookies_file()
+    if ck:
+        # Secret Fileは読み取り専用のことがあるため、書込可能な場所へコピーして使う
+        tmp_ck = os.path.join(WORK, "cookies.txt")
+        try:
+            shutil.copyfile(ck, tmp_ck)
+            cmd[1:1] = ["--cookies", tmp_ck]
+        except Exception:
+            cmd[1:1] = ["--cookies", ck]
+    elif COOKIES:
         cmd[1:1] = ["--cookies-from-browser", COOKIES]
     out = run(cmd)
     path = [l for l in out.splitlines() if os.path.exists(l)]
@@ -350,10 +367,10 @@ a.dl{display:inline-block;font-family:"Oswald",sans-serif;letter-spacing:.12em;t
     <p class="meta" id="meta"></p>
     <div class="reg">
       <input id="exname" placeholder="種目名（例: ベンチプレス）">
-      <a class="dl" id="dl" download>ダウンロード</a>
-      <button class="dl" id="reg" type="button">BODY LOGへ登録</button>
+      <button class="primary" id="reg" type="button">この種目に挿入</button>
     </div>
     <p class="meta" id="regmsg"></p>
+    <p class="meta"><a id="dl" download style="color:var(--slate);text-decoration:underline">GIFファイルをダウンロード（必要な場合のみ）</a></p>
   </div>
 </section>
 </div>
@@ -458,15 +475,14 @@ async function registerGif(){
   const name=$('exname').value.trim();
   if(!name){$('regmsg').textContent='種目名を入力してください（BODY LOGの種目名と同じ表記で）';return;}
   if(!lastGif){$('regmsg').textContent='先にGIFを作成してください';return;}
-  $('reg').disabled=true; $('regmsg').textContent='BODY LOGへ登録中…';
+  $('reg').disabled=true; $('reg').textContent='挿入中…'; $('regmsg').textContent='';
   try{
     const j=await api('/api/register',{file:lastGif,name:name});
-    $('regmsg').textContent='✅ '+(j.message||'登録しました');
-  }catch(e){ $('regmsg').textContent='登録失敗：'+e.message; }
-  $('reg').disabled=false;
+    $('regmsg').textContent='✅ '+(j.message||'BODY LOGに挿入しました');
+  }catch(e){ $('regmsg').textContent='挿入失敗：'+e.message; }
+  $('reg').disabled=false; $('reg').textContent='この種目に挿入';
 }
 $('reg').onclick=registerGif;
-$('dl').addEventListener('click',()=>{ if($('exname').value.trim()) registerGif(); });
 </script></body></html>
 """
 

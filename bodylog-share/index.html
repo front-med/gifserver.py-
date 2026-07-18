@@ -365,7 +365,7 @@
   .ex-row input, .ex-row select { padding: 10px; font-size: 15px; }
   .ex-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
     margin-top: 8px;
   }
@@ -412,7 +412,7 @@
   }
   .rec-edit .re-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
     margin-top: 8px;
   }
@@ -602,7 +602,7 @@
       <div class="email" id="reg-email"></div>
       <input type="text" id="reg-name" placeholder="名前（必須・30文字まで）" maxlength="30">
       <button class="btn-main" id="btn-register" onclick="doRegister()">登録してはじめる</button>
-      <div class="reg-note">記録データはあなた自身のGoogleドライブに<br>作成されるスプレッドシートに保存されます。<br>他の人があなたの記録を見ることはできません。</div>
+      <div class="reg-note">登録は名前の入力だけで完了します。<br>記録データはこのアプリ内にあなた専用で保存され、<br>他の人があなたの記録を見ることはできません。</div>
     </div>
   </div>
 </div>
@@ -800,7 +800,7 @@
     if (!name) { toast('名前を入力してください'); return; }
     const btn = document.getElementById('btn-register');
     btn.disabled = true;
-    btn.textContent = '登録中...（記録用シートを作成しています）';
+    btn.textContent = '登録中...';
     google.script.run
       .withSuccessHandler(function(res) {
         btn.disabled = false;
@@ -830,9 +830,10 @@
       '</div>' +
       '<div class="ex-detail" style="display:none">' +
         '<div class="ex-grid">' +
-          '<div><label>重量(kg)</label><input type="number" class="ex-weight" inputmode="decimal" step="0.5" placeholder="60"></div>' +
-          '<div><label>回数</label><input type="number" class="ex-reps" inputmode="numeric" placeholder="10"></div>' +
-          '<div><label>セット数</label><input type="number" class="ex-sets" inputmode="numeric" placeholder="3"></div>' +
+          '<div><label>重量(kg)</label><input type="text" class="ex-weight" placeholder="60 / 自重 など"></div>' +
+          '<div><label>回数</label><input type="text" class="ex-reps" placeholder="10 / 10-8-6 など"></div>' +
+          '<div><label>セット数</label><input type="text" class="ex-sets" placeholder="3"></div>' +
+          '<div><label>秒数</label><input type="text" class="ex-secs" placeholder="30 / 左右30 など"></div>' +
         '</div>' +
       '</div>';
     document.getElementById('ex-list').appendChild(wrap);
@@ -917,6 +918,11 @@
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // 値表示: 数値なら単位付き、文字入力（自重/10-8-6等）ならそのまま
+  function fv(v, unit) {
+    return isNaN(Number(v)) ? escapeHtml(v) : escapeHtml(v) + unit;
   }
 
   // ===== 5段階スケールUI =====
@@ -1045,9 +1051,10 @@
           '<label>種目名</label>' +
           '<select id="re-name">' + exOptionsHtml(r.name) + '</select>' +
           '<div class="re-grid">' +
-            '<div><label>重量(kg)</label><input type="number" id="re-weight" inputmode="decimal" step="0.5" value="' + (r.weight != null ? r.weight : '') + '"></div>' +
-            '<div><label>回数</label><input type="number" id="re-reps" inputmode="numeric" value="' + (r.reps != null ? r.reps : '') + '"></div>' +
-            '<div><label>セット数</label><input type="number" id="re-sets" inputmode="numeric" value="' + (r.sets != null ? r.sets : '') + '"></div>' +
+            '<div><label>重量(kg)</label><input type="text" id="re-weight" value="' + escapeHtml(r.weight != null ? r.weight : '') + '"></div>' +
+            '<div><label>回数</label><input type="text" id="re-reps" value="' + escapeHtml(r.reps != null ? r.reps : '') + '"></div>' +
+            '<div><label>セット数</label><input type="text" id="re-sets" value="' + escapeHtml(r.sets != null ? r.sets : '') + '"></div>' +
+            '<div><label>秒数</label><input type="text" id="re-secs" value="' + escapeHtml(r.secs != null ? r.secs : '') + '"></div>' +
           '</div>' +
           '<div class="re-actions">' +
             '<button class="re-cancel" onclick="cancelRec()">キャンセル</button>' +
@@ -1056,9 +1063,10 @@
         '</div></div>';
       } else {
         const parts = [];
-        if (r.weight != null) parts.push(r.weight + 'kg');
-        if (r.reps != null) parts.push(r.reps + '回');
-        if (r.sets != null) parts.push(r.sets + 'セット');
+        if (r.weight != null) parts.push(fv(r.weight, 'kg'));
+        if (r.reps != null) parts.push(fv(r.reps, '回'));
+        if (r.sets != null) parts.push(fv(r.sets, 'セット'));
+        if (r.secs != null) parts.push(fv(r.secs, '秒'));
         html += '<div class="rec-item"><div class="rec-view">' +
           '<span class="rec-name">' + escapeHtml(r.name) + '</span>' +
           '<span class="rec-detail">' + parts.join('×') + '</span>' +
@@ -1088,7 +1096,8 @@
       name: document.getElementById('re-name').value,
       weight: document.getElementById('re-weight').value,
       reps: document.getElementById('re-reps').value,
-      sets: document.getElementById('re-sets').value
+      sets: document.getElementById('re-sets').value,
+      secs: document.getElementById('re-secs').value
     };
     if (!payload.name) { toast('種目を選択してください'); return; }
     google.script.run.withSuccessHandler(function(res) {
@@ -1106,7 +1115,7 @@
 
   function delRec(i) {
     const r = dayRecs[i];
-    if (!confirm(r.name + ' の記録を削除しますか？\n（スプレッドシートからも削除されます）')) return;
+    if (!confirm(r.name + ' の記録を削除しますか？\n（元に戻せません）')) return;
     google.script.run.withSuccessHandler(function(res) {
       toast(res.message);
       summaryData = null;
@@ -1133,7 +1142,8 @@
         name: name,
         weight: row.querySelector('.ex-weight').value,
         reps: row.querySelector('.ex-reps').value,
-        sets: row.querySelector('.ex-sets').value
+        sets: row.querySelector('.ex-sets').value,
+        secs: row.querySelector('.ex-secs').value
       });
     });
 
@@ -1250,13 +1260,14 @@
 
     sheetDayDate = date;
     let html = '<div class="back-bar"><button class="back-btn" onclick="backToDayList()">‹ 日付一覧に戻る</button></div>';
-    html += '<div class="day-table-wrap"><table><tr><th>種目</th><th>重量<br>(kg)</th><th>回数</th><th>セット</th><th>時刻</th><th></th></tr>';
+    html += '<div class="day-table-wrap"><table><tr><th>種目</th><th>重量<br>(kg)</th><th>回数</th><th>セット</th><th>秒数</th><th>時刻</th><th></th></tr>';
     day.exercises.forEach(function(t, i) {
       html += '<tr>' +
         '<td>' + escapeHtml(t.name) + '</td>' +
-        '<td>' + (t.weight !== null ? t.weight : '--') + '</td>' +
-        '<td>' + (t.reps !== null ? t.reps : '--') + '</td>' +
-        '<td>' + (t.sets !== null ? t.sets : '--') + '</td>' +
+        '<td>' + (t.weight !== null ? escapeHtml(t.weight) : '--') + '</td>' +
+        '<td>' + (t.reps !== null ? escapeHtml(t.reps) : '--') + '</td>' +
+        '<td>' + (t.sets !== null ? escapeHtml(t.sets) : '--') + '</td>' +
+        '<td>' + (t.secs != null ? escapeHtml(t.secs) : '--') + '</td>' +
         '<td class="dim">' + (t.time || '--') + '</td>' +
         '<td><button class="sv-del" onclick="delSheetRow(' + t.row + ')">削除</button></td>' +
         '</tr>';
@@ -1268,7 +1279,7 @@
   let sheetDayDate = '';
 
   function delSheetRow(row) {
-    if (!confirm('この記録を削除しますか？\n（スプレッドシートからも削除されます）')) return;
+    if (!confirm('この記録を削除しますか？\n（元に戻せません）')) return;
     google.script.run.withSuccessHandler(function(res) {
       toast(res.message);
       if (!res.success) return;

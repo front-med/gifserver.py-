@@ -127,6 +127,9 @@ clasp deploy -i $(cat .deployment-id) -d "説明"     # 本番へ新バージョ
 ## 既知の注意点・過去の地雷
 
 - **再デプロイ忘れ**が不具合原因の9割。コード変更後は必ず新バージョンでデプロイ
+- **Sheetsの日付自動変換に注意**: 「2/4」等の文字列をsetValuesすると日付Dateに化け、
+  google.script.run はDate入りの戻り値を返せず**通信ごと沈黙する**（アプリ全死に見える）。
+  対策済み: 書き込みは非数値文字列に `'` 前置で強制テキスト化＋読み出しでDate→文字列変換
 - GASの新規Drive機能追加時は appsscript.json の oauthScopes に権限追加＋setup等の実行で再承認が必要
   （現在: spreadsheets, drive。UrlFetchApp使用時は external_request も）
 - GIFは9MB上限（register側で弾く）。フォーム素材は6秒以内・320〜480pxを推奨

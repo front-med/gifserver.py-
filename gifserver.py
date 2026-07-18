@@ -223,6 +223,15 @@ class Handler(BaseHTTPRequestHandler):
                                    bool(body.get("loop", True)))
                 self._json(200, {"gif": "/out/" + os.path.basename(out),
                                  "size": os.path.getsize(out), "path": out})
+            elif p == "/api/exercises":
+                if not GAS_URL or not GAS_SECRET:
+                    raise RuntimeError("BODY LOG連携が未設定です")
+                payload = json.dumps({"secret": GAS_SECRET, "action": "listExercises"}).encode()
+                req = urllib.request.Request(GAS_URL, data=payload,
+                                             headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    res = json.loads(r.read().decode() or "{}")
+                self._json(200, {"names": res.get("names") or []})
             elif p == "/api/register":
                 if not GAS_URL or not GAS_SECRET:
                     raise RuntimeError("BODY LOG連携が未設定です（GAS_URL / GAS_SECRET を設定してください）。")
@@ -309,7 +318,7 @@ select{width:100%;background:var(--panel);border:1px solid var(--panel-2);color:
 .result.on{display:block}
 .result img{max-width:100%;display:block;margin-bottom:12px;background:#000}
 .reg{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px}
-.reg input{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--panel-2);color:var(--pale);padding:10px 12px;border-radius:var(--radius);font-family:inherit;font-size:14px}
+.reg input,.reg select{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--panel-2);color:var(--pale);padding:10px 12px;border-radius:var(--radius);font-family:inherit;font-size:14px}
 .reg button.dl{border:none;cursor:pointer;font-family:inherit}
 .meta{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--slate);margin-bottom:10px}
 .meta b{color:var(--gold-soft)}
@@ -366,7 +375,7 @@ a.dl{display:inline-block;font-family:"Oswald",sans-serif;letter-spacing:.12em;t
     <img id="out" alt="生成されたGIF">
     <p class="meta" id="meta"></p>
     <div class="reg">
-      <input id="exname" placeholder="種目名（例: ベンチプレス）">
+      <select id="exname"><option value="">種目を選択</option></select>
       <button class="primary" id="reg" type="button">この種目に挿入</button>
     </div>
     <p class="meta" id="regmsg"></p>
@@ -377,6 +386,7 @@ a.dl{display:inline-block;font-family:"Oswald",sans-serif;letter-spacing:.12em;t
 
 <script>
 const KEY=__ACCESS_KEY__;
+const EXPARAM=new URLSearchParams(location.search).get('ex')||'';
 const $=id=>document.getElementById(id), video=$('video');
 let duration=0,inT=0,outT=0,mediaId=null,lastGif=null;
 const withKey=u=>KEY?u+(u.includes('?')?'&':'?')+'key='+encodeURIComponent(KEY):u;
@@ -473,7 +483,7 @@ $('go').onclick=async()=>{
 
 async function registerGif(){
   const name=$('exname').value.trim();
-  if(!name){$('regmsg').textContent='種目名を入力してください（BODY LOGの種目名と同じ表記で）';return;}
+  if(!name){$('regmsg').textContent='種目を選択してください';return;}
   if(!lastGif){$('regmsg').textContent='先にGIFを作成してください';return;}
   $('reg').disabled=true; $('reg').textContent='挿入中…'; $('regmsg').textContent='';
   try{
@@ -483,6 +493,21 @@ async function registerGif(){
   $('reg').disabled=false; $('reg').textContent='この種目に挿入';
 }
 $('reg').onclick=registerGif;
+
+// BODY LOGから種目一覧を取得してプルダウンに反映（?ex=種目名 があれば自動選択）
+(async()=>{
+  const sel=$('exname');
+  try{
+    const j=await api('/api/exercises',{});
+    (j.names||[]).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o);});
+  }catch(e){}
+  if(EXPARAM){
+    if(![...sel.options].some(o=>o.value===EXPARAM)){
+      const o=document.createElement('option');o.value=EXPARAM;o.textContent=EXPARAM;sel.appendChild(o);
+    }
+    sel.value=EXPARAM;
+  }
+})();
 </script></body></html>
 """
 

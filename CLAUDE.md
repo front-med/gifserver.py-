@@ -1,4 +1,8 @@
-# CLAUDE.md — BODY LOG プロジェクト引き継ぎ書
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## BODY LOG プロジェクト引き継ぎ書
 
 このリポジトリは、前田怜緒（Reo）の個人開発プロジェクト「BODY LOG」エコシステムの一部。
 Claude.aiのチャットで開発してきた内容を、Claude Codeで継続開発するための引き継ぎ書。
@@ -42,11 +46,39 @@ Claude.aiのチャットで開発してきた内容を、Claude Codeで継続開
   - `POST /api/exercises` … GASから種目一覧を取得（プルダウン用）
   - `POST /api/register` … GIFをGASへPOSTして素材登録（9MB上限）
 - UIはPAGE変数内のHTML。`?ex=種目名` で種目プルダウンを自動選択
+- UIは白黒モノトーンに統一済み（2026-07-18〜）。外部フォント読み込みなし・font:inherit で統一
+
+## ローカル開発・動作確認
+
+このMac固有のツール配置（brew未導入のため静的バイナリを使用）:
+
+- `ffmpeg` / `ffprobe` / `gh` … `~/.local/bin/`（PATHは ~/.zshrc で設定済み。スクリプト内では `export PATH="$HOME/.local/bin:$PATH"` を明示すると確実）
+- `yt-dlp` / `python3` … anaconda3（`~/anaconda3/bin/`）
+
+```bash
+# 構文チェック
+python3 -m py_compile gifserver.py
+
+# ローカル起動（http://127.0.0.1:8765 が自動で開く）
+python3 gifserver.py --port 8765
+
+# E2E動作確認（サーバ起動後、直リンクmp4で fetch → render）
+curl -s -X POST http://127.0.0.1:8765/api/fetch -H 'Content-Type: application/json' \
+  -d '{"url":"https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4"}'
+# → 返ってきた id を使って:
+curl -s -X POST http://127.0.0.1:8765/api/render -H 'Content-Type: application/json' \
+  -d '{"id":"<id>","start":0,"end":2,"width":320,"fps":12,"colors":256,"dither":"sierra2_4a","loop":true}'
+```
+
+- テスト生成物は `gif_out/`（gitignore済み）。確認後は消してよい
+- UIプレビュー: PAGE をHTMLに書き出してヘッドレスChromeでスクショ確認できる
+  （`python3 -c "import gifserver; open('page.html','w').write(gifserver.PAGE.replace('__ACCESS_KEY__','\"\"'))"`）
+- テストフレームワーク・リンターは無し（標準ライブラリのみの単一ファイル構成）
 
 ## BODY LOG（GAS側）
 
-- 実体はGASエディタ上の2ファイル: `Code.gs` と `index.html`（このリポジトリには未収載。
-  取り込む場合は bodylog/ ディレクトリを作って管理し、変更後はGASエディタへ手動貼り付け）
+- 実体はGASエディタ上の2ファイル: `Code.gs` と `index.html`（ソースは `bodylog/` で管理する。
+  現状はREADMEのみでソース未取り込み。変更後はGASエディタへ手動貼り付け。詳細は bodylog/README.md）
 - スプレッドシートのシート構成:
   - `コンディション`: 日付/体重(kg)/睡眠時間(h)/疲労度(1-5)/体調スコア(1-5)/メモ/記録時刻
   - `トレーニング`: 日付/種目/重量(kg)/回数/セット数/記録時刻

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>BODY LOG 管理</title>
+<style>
+  :root {
+    --text: #1a1a1a;
+    --text-dim: #8a8a8a;
+    --line: #e2e2e2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    background: #ffffff;
+    color: var(--text);
+    min-height: 100vh;
+    font-weight: 500;
+  }
+  input, button { font-weight: 500; font-family: inherit; }
+
+  header {
+    padding: 20px 20px 14px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  header .brand { font-size: 11px; letter-spacing: 3px; color: #111111; font-weight: bold; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  main { padding: 18px 16px 60px; max-width: 640px; margin: 0 auto; }
+
+  .card {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .card h2 { font-size: 13px; color: #111111; letter-spacing: 1.5px; margin-bottom: 12px; font-weight: 600; }
+
+  input[type="password"] {
+    width: 100%;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 16px;
+    padding: 12px;
+    outline: none;
+    margin-bottom: 12px;
+  }
+  input:focus { border-color: #111111; }
+  .btn-main {
+    width: 100%;
+    padding: 14px;
+    background: #111111;
+    border: none;
+    border-radius: 12px;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .btn-main:disabled { opacity: 0.5; }
+  .msg { font-size: 13px; color: #c0392b; min-height: 20px; margin-top: 8px; }
+
+  .user-btn {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 15px;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 15px;
+    color: var(--text);
+    margin-bottom: 9px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .user-btn .nm { font-weight: 600; }
+  .user-btn .st { font-size: 12px; color: var(--text-dim); }
+
+  .back-btn {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 14px;
+    font-size: 13px;
+    color: #333333;
+    cursor: pointer;
+    margin-bottom: 14px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    background: #111111;
+    color: #ffffff;
+    text-align: left;
+    padding: 8px 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+  }
+  td { padding: 8px 6px; border-bottom: 1px solid #efefef; white-space: nowrap; }
+  td.dim { color: var(--text-dim); }
+  td.memo { white-space: normal; font-size: 10.5px; color: var(--text-dim); word-break: break-all; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+
+  .day-block { margin-bottom: 14px; }
+  .day-block .d { font-size: 12px; color: #111111; font-weight: bold; margin-bottom: 6px; }
+  .empty { text-align: center; color: var(--text-dim); font-size: 13px; padding: 24px 0; }
+  .loading { text-align: center; color: var(--text-dim); padding: 30px 0; font-size: 13px; }
+  .view { display: none; }
+  .view.on { display: block; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">BODY LOG</span>
+  <h1>管理者ビュー</h1>
+</header>
+
+<main>
+
+  <!-- ログイン -->
+  <div class="view on" id="v-login">
+    <div class="card">
+      <h2>ADMIN LOGIN</h2>
+      <input type="password" id="adm-pass" placeholder="管理者あいことば">
+      <button class="btn-main" id="btn-login" onclick="login()">入る</button>
+      <div class="msg" id="login-msg"></div>
+    </div>
+  </div>
+
+  <!-- ユーザー一覧 -->
+  <div class="view" id="v-list">
+    <div class="card">
+      <h2>USERS</h2>
+      <div id="user-list"><div class="loading">読み込み中...</div></div>
+    </div>
+  </div>
+
+  <!-- ユーザー詳細 -->
+  <div class="view" id="v-detail">
+    <button class="back-btn" onclick="showView('v-list')">‹ ユーザー一覧に戻る</button>
+    <div class="card">
+      <h2 id="d-name">—</h2>
+      <div id="d-body"><div class="loading">読み込み中...</div></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  let PASS = '';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function showView(id) {
+    ['v-login', 'v-list', 'v-detail'].forEach(function(v) {
+      document.getElementById(v).classList.toggle('on', v === id);
+    });
+  }
+
+  function login() {
+    const pass = document.getElementById('adm-pass').value;
+    if (!pass) { document.getElementById('login-msg').textContent = 'あいことばを入力してください'; return; }
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    btn.textContent = '確認中...';
+    google.script.run
+      .withSuccessHandler(function(users) {
+        btn.disabled = false;
+        btn.textContent = '入る';
+        PASS = pass;
+        renderList(users);
+        showView('v-list');
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        btn.textContent = '入る';
+        document.getElementById('login-msg').textContent = err.message;
+      })
+      .adminListUsers(pass);
+  }
+  document.getElementById('adm-pass').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') login();
+  });
+
+  function renderList(users) {
+    const el = document.getElementById('user-list');
+    if (!users || users.length === 0) {
+      el.innerHTML = '<div class="empty">まだユーザーがいません</div>';
+      return;
+    }
+    let html = '';
+    users.forEach(function(u) {
+      html += '<button class="user-btn" onclick="openUser(\'' + esc(u.uid) + '\', \'' + esc(u.name).replace(/'/g, "\\'") + '\')">' +
+        '<span class="nm">' + esc(u.name || '(名前なし)') + '</span>' +
+        '<span class="st">記録' + u.condDays + '日 ／ トレ' + u.trainDays + '日 ›</span>' +
+        '</button>';
+    });
+    el.innerHTML = html;
+  }
+
+  function openUser(uid, name) {
+    document.getElementById('d-name').textContent = name + ' さんの記録';
+    document.getElementById('d-body').innerHTML = '<div class="loading">読み込み中...</div>';
+    showView('v-detail');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res.success) {
+          document.getElementById('d-body').innerHTML = '<div class="empty">' + esc(res.message) + '</div>';
+          return;
+        }
+        renderDetail(res.summary);
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('d-body').innerHTML = '<div class="empty">エラー: ' + esc(err.message) + '</div>';
+      })
+      .adminGetUser(PASS, uid);
+  }
+
+  function setLines(r) {
+    const ws = r.weight != null ? String(r.weight).split('/') : [];
+    const rs = r.reps != null ? String(r.reps).split('/') : [];
+    const n = Math.max(ws.length, rs.length);
+    const lines = [];
+    for (let k = 0; k < n; k++) {
+      const w = (ws[k] || '').trim();
+      const c = (rs[k] || '').trim();
+      if (!w && !c) continue;
+      lines.push({ no: k + 1, w: w, c: c });
+    }
+    return lines;
+  }
+
+  function renderDetail(sum) {
+    let html = '';
+
+    // コンディション一覧
+    html += '<h2 style="margin-top:4px">コンディション</h2>';
+    const conds = (sum && sum.conditions) || [];
+    if (conds.length === 0) {
+      html += '<div class="empty">記録なし</div>';
+    } else {
+      html += '<div class="table-wrap"><table>' +
+        '<tr><th>日付</th><th>時刻</th><th>体重</th><th>睡眠</th><th>疲労</th><th>体調</th><th>メモ</th></tr>';
+      conds.forEach(function(c) {
+        html += '<tr>' +
+          '<td>' + esc(c.date.slice(5).replace('-', '/')) + '</td>' +
+          '<td class="dim">' + esc(c.time || '--') + '</td>' +
+          '<td>' + (c.weight !== null ? esc(c.weight) : '--') + '</td>' +
+          '<td>' + (c.sleep !== null ? esc(c.sleep) : '--') + '</td>' +
+          '<td>' + (c.fatigue !== null ? esc(c.fatigue) : '--') + '</td>' +
+          '<td>' + (c.score !== null ? esc(c.score) : '--') + '</td>' +
+          '<td class="memo">' + esc(c.memo || '') + '</td>' +
+          '</tr>';
+      });
+      html += '</table></div>';
+    }
+
+    // トレーニング（日別・セットごと）
+    html += '<h2 style="margin-top:18px">トレーニング</h2>';
+    const days = (sum && sum.recentTrainings) || [];
+    if (days.length === 0) {
+      html += '<div class="empty">記録なし</div>';
+    } else {
+      days.forEach(function(day) {
+        const wd = ['日','月','火','水','木','金','土'][new Date(day.date + 'T00:00:00').getDay()];
+        html += '<div class="day-block"><div class="d">' + esc(day.date.replace(/-/g, '/')) + '（' + wd + '）</div>';
+        html += '<div class="table-wrap"><table>' +
+          '<tr><th>種目</th><th>セット</th><th>重量(kg)</th><th>回数</th><th>秒数</th><th>時刻</th></tr>';
+        day.exercises.forEach(function(t) {
+          const lines = setLines(t);
+          const n = Math.max(lines.length, 1);
+          for (let k = 0; k < n; k++) {
+            const l = lines[k];
+            let setLabel;
+            if (lines.length > 1) setLabel = l.no + 'セット目';
+            else if (t.sets != null && String(t.sets) !== '1') setLabel = esc(t.sets) + 'セット';
+            else if (lines.length === 1) setLabel = '1セット目';
+            else setLabel = '--';
+            html += '<tr>';
+            if (k === 0) html += '<td rowspan="' + n + '"><b>' + esc(t.name) + '</b></td>';
+            html += '<td>' + setLabel + '</td>' +
+              '<td>' + (l && l.w ? esc(l.w) : '--') + '</td>' +
+              '<td>' + (l && l.c ? esc(l.c) : '--') + '</td>';
+            if (k === 0) {
+              html += '<td rowspan="' + n + '">' + (t.secs != null ? esc(t.secs) : '--') + '</td>' +
+                '<td rowspan="' + n + '" class="dim">' + esc(t.time || '--') + '</td>';
+            }
+            html += '</tr>';
+          }
+        });
+        html += '</table></div></div>';
+      });
+    }
+
+    document.getElementById('d-body').innerHTML = html;
+  }
+</script>
+</body>
+</html>

@@ -425,6 +425,21 @@
     margin-top: 10px;
   }
   .re-status { font-size: 12px; color: var(--text-dim); }
+
+  /* セットごと入力 */
+  .set-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .set-row .set-no {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+    background: #111111; color: #ffffff; font-size: 11px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .set-row input { flex: 1; min-width: 0; padding: 10px; font-size: 15px; }
+  .set-row .set-unit { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+  .set-row .set-del {
+    flex-shrink: 0; width: 34px; height: 34px; background: #ffffff;
+    border: 1px solid var(--line); border-radius: 8px; color: var(--text-dim); cursor: pointer;
+  }
+  .add-set { margin-bottom: 4px; }
   .rec-edit .re-actions button {
     padding: 10px;
     border-radius: 9px;
@@ -1064,11 +1079,13 @@
         html += '<div class="rec-item"><div class="rec-edit">' +
           '<label>種目名</label>' +
           '<select id="re-name" onchange="scheduleAutoSave()">' + exOptionsHtml(r.name) + '</select>' +
-          '<div class="re-grid">' +
-            '<div><label>重量(kg)</label><input type="text" id="re-weight" oninput="scheduleAutoSave()" value="' + escapeHtml(r.weight != null ? r.weight : '') + '"></div>' +
-            '<div><label>回数</label><input type="text" id="re-reps" oninput="scheduleAutoSave()" value="' + escapeHtml(r.reps != null ? r.reps : '') + '"></div>' +
-            '<div><label>セット数</label><input type="text" id="re-sets" oninput="scheduleAutoSave()" value="' + escapeHtml(r.sets != null ? r.sets : '') + '"></div>' +
-            '<div><label>秒数</label><input type="text" id="re-secs" oninput="scheduleAutoSave()" value="' + escapeHtml(r.secs != null ? r.secs : '') + '"></div>' +
+          '<label style="margin-top:10px">セットごとの記録</label>' +
+          '<div id="re-sets-list">' +
+            setRowsFromRec_(r).map(function(x, k) { return setRowHtml_(k, x.w, x.r); }).join('') +
+          '</div>' +
+          '<button type="button" class="btn-sub add-set" onclick="addSetRow()">＋ セットを追加</button>' +
+          '<div class="re-grid" style="margin-top:10px">' +
+            '<div><label>秒数（任意・プランク等）</label><input type="text" id="re-secs" oninput="scheduleAutoSave()" value="' + escapeHtml(r.secs != null ? r.secs : '') + '"></div>' +
           '</div>' +
           '<div class="re-actions">' +
             '<span class="re-status" id="re-status">自動保存されます</span>' +
@@ -1077,13 +1094,28 @@
         '</div></div>';
       } else {
         const parts = [];
-        if (r.weight != null) parts.push(fv(r.weight, 'kg'));
-        if (r.reps != null) parts.push(fv(r.reps, '回'));
-        if (r.sets != null) parts.push(fv(r.sets, 'セット'));
+        const multi = (r.weight != null && String(r.weight).indexOf('/') >= 0) ||
+                      (r.reps != null && String(r.reps).indexOf('/') >= 0);
+        if (multi) {
+          const ws = r.weight != null ? String(r.weight).split('/') : [];
+          const rs = r.reps != null ? String(r.reps).split('/') : [];
+          const n = Math.max(ws.length, rs.length);
+          const seg = [];
+          for (let k = 0; k < n; k++) {
+            const w = ws[k] ? ws[k] + 'kg' : '';
+            const c = rs[k] ? rs[k] + '回' : '';
+            seg.push(w + (w && c ? '×' : '') + c);
+          }
+          parts.push(escapeHtml(seg.join(' → ')));
+        } else {
+          if (r.weight != null) parts.push(fv(r.weight, 'kg'));
+          if (r.reps != null) parts.push(fv(r.reps, '回'));
+          if (r.sets != null) parts.push(fv(r.sets, 'セット'));
+        }
         if (r.secs != null) parts.push(fv(r.secs, '秒'));
         html += '<div class="rec-item"><div class="rec-view">' +
           '<span class="rec-name">' + escapeHtml(r.name) + '</span>' +
-          '<span class="rec-detail">' + parts.join('×') + '</span>' +
+          '<span class="rec-detail">' + parts.join(multi ? '　' : '×') + '</span>' +
           '<button onclick="editRec(' + i + ')">編集</button>' +
           '<button class="rec-del" onclick="delRec(' + i + ')">削除</button>' +
         '</div></div>';
@@ -1112,15 +1144,75 @@
     const r = dayRecs[editingIdx];
     const nameEl = document.getElementById('re-name');
     if (!r || !nameEl) return null;
+    const rows = [];
+    document.querySelectorAll('#re-sets-list .set-row').forEach(function(el) {
+      rows.push({
+        w: el.querySelector('.set-w').value.trim(),
+        r: el.querySelector('.set-r').value.trim()
+      });
+    });
+    const used = rows.filter(function(x) { return x.w !== '' || x.r !== ''; });
     return {
       row: r.row,
       date: r.date,
       name: nameEl.value,
-      weight: document.getElementById('re-weight').value,
-      reps: document.getElementById('re-reps').value,
-      sets: document.getElementById('re-sets').value,
+      weight: used.map(function(x) { return x.w; }).join('/'),
+      reps: used.map(function(x) { return x.r; }).join('/'),
+      sets: used.length ? String(used.length) : '',
       secs: document.getElementById('re-secs').value
     };
+  }
+
+  // ===== セットごと入力の行操作 =====
+  function setRowsFromRec_(r) {
+    const ws = r.weight != null ? String(r.weight).split('/') : [''];
+    const rs = r.reps != null ? String(r.reps).split('/') : [''];
+    const n = Math.max(ws.length, rs.length, 1);
+    const rows = [];
+    for (let k = 0; k < n; k++) rows.push({ w: ws[k] || '', r: rs[k] || '' });
+    return rows;
+  }
+
+  function setRowHtml_(idx, w, r) {
+    return '<div class="set-row">' +
+      '<span class="set-no">' + (idx + 1) + '</span>' +
+      '<input type="text" class="set-w" placeholder="重量" oninput="scheduleAutoSave()" value="' + escapeHtml(w) + '">' +
+      '<span class="set-unit">kg</span>' +
+      '<input type="text" class="set-r" placeholder="回数" oninput="scheduleAutoSave()" value="' + escapeHtml(r) + '">' +
+      '<span class="set-unit">回</span>' +
+      '<button type="button" class="set-del" onclick="removeSetRow(this)">✕</button>' +
+      '</div>';
+  }
+
+  function addSetRow() {
+    const list = document.getElementById('re-sets-list');
+    if (!list) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = setRowHtml_(list.children.length, '', '');
+    list.appendChild(tmp.firstChild);
+    renumberSetRows_();
+    const rows = list.querySelectorAll('.set-row');
+    const last = rows[rows.length - 1].querySelector('.set-w');
+    if (last) last.focus();
+  }
+
+  function removeSetRow(btn) {
+    const row = btn.closest('.set-row');
+    const list = row.parentElement;
+    if (list.children.length <= 1) {
+      row.querySelector('.set-w').value = '';
+      row.querySelector('.set-r').value = '';
+    } else {
+      row.remove();
+    }
+    renumberSetRows_();
+    scheduleAutoSave();
+  }
+
+  function renumberSetRows_() {
+    document.querySelectorAll('#re-sets-list .set-no').forEach(function(el, i) {
+      el.textContent = i + 1;
+    });
   }
 
   function applyLocal_(r, p) {

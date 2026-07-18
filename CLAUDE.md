@@ -106,6 +106,9 @@ curl -s -X POST http://127.0.0.1:8765/api/render -H 'Content-Type: application/j
 - **コード.jsはあいことば入りのためgitignore**（index.html/appsscript.jsonはコミット対象）
 - デプロイフローは bodylog/ と同じ（`clasp push` → `clasp deploy -i $(cat .deployment-id) -d "説明"`）
 - ヘッダーの名前横「変更」ボタンでいつでも名前変更可（renameUser）
+- 管理者ビュー: 共有版の `?view=admin`（admin.html）と、**本家まとめタブ内「メンバーの記録」**の2箇所。
+  本家はUrlFetchApp→共有版doPost(adminList/adminUser)で中継。ADMIN_PASSCODE保護・閲覧のみ。
+  パスキーはlocalStorage(BL_ADMIN_PASS)に保存可
 
 ## GASのデプロイ手順（clasp導入済み・2026-07-18〜）
 
